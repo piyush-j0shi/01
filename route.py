@@ -179,8 +179,8 @@ async def root():
     return """
     <html>
         <body>
-            <h1>Company Web Scraper API</h1>
-            <p>Frontend UI not found. Please ensure index.html is in the project directory.</p>
+            <h1Web Scraper API</h1>
+            <p>Frontend UI not found. Please ensure index.html is available.</p>
         </body>
     </html>
     """
@@ -189,7 +189,7 @@ async def root():
 @app.get("/api/health")
 async def health():
     return {
-        "message": "Company Web Scraper API",
+        "message": "Web Scraper API",
         "version": "1.0.0",
         "status": "running"
     }
