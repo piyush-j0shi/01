@@ -33,8 +33,7 @@ class LogCollector:
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         log_entry = f"[{timestamp}] {message}"
         self.logs.append(log_entry)
-        if self.job_id in log_streams:
-            log_streams[self.job_id].append(log_entry)
+        log_streams[self.job_id].append(log_entry)
 
 
 def process_file_task_sync(file_path: str, city: str, country: str, job_id: str):
