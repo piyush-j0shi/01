@@ -114,11 +114,6 @@ def normalize_name(name):
     return [t for t in tokens if t not in remove_words and len(t) > 2]
 
 def search_company_url(driver, company_name, location="London UK", log_callback=None):
-    def log(msg):
-        print(msg)
-        if log_callback:
-            log_callback(msg)
-
     try:
         driver.get(SEARCH_ENGINE)
         handle_google_consent(driver)
@@ -137,27 +132,25 @@ def search_company_url(driver, company_name, location="London UK", log_callback=
             search_box = driver.find_element(By.NAME, "q")
             search_box.send_keys(f"{company_name} {location}")
             search_box.send_keys(Keys.RETURN)
-        
-        random_sleep(4, 6) 
+
+        random_sleep(4, 6)
         handle_google_consent(driver)
 
-        # Official Button
         official_site = get_google_website_button(driver)
         if official_site:
-            log(f"   -> [METHOD: BUTTON] Found official link: {official_site}")
+            print(f"   -> [METHOD: BUTTON] Found official link: {official_site}")
             return official_site
 
-        # Organic Search
         try:
-            results_container = driver.find_element(By.ID, "search") 
+            results_container = driver.find_element(By.ID, "search")
             links = results_container.find_elements(By.TAG_NAME, "a")
         except:
             links = driver.find_elements(By.XPATH, "//div[@class='g']//a")
 
         ignored_domains = [
-            'google.', 'microsoft.', 'yahoo.', 'bing.', 'facebook.', 'linkedin.', 'instagram.', 'twitter.', 
+            'google.', 'microsoft.', 'yahoo.', 'bing.', 'facebook.', 'linkedin.', 'instagram.', 'twitter.',
             'youtube.', 'pinterest.', 'yell.com', 'checkatrade.com', 'trustpilot.com', 'thomsonlocal',
-            'company-information.service.gov.uk', 'companieshouse.gov.uk', 
+            'company-information.service.gov.uk', 'companieshouse.gov.uk',
             'thegazette.co.uk', 'endole.co.uk', 'pomanda.com', 'bizify.co.uk', '192.com'
         ]
 
@@ -168,22 +161,20 @@ def search_company_url(driver, company_name, location="London UK", log_callback=
             if any(ignored in href for ignored in ignored_domains): continue
             valid_links.append((href, link.text.lower()))
 
-        # Smart Match
         company_tokens = normalize_name(company_name)
         for href, text in valid_links:
             if any(token in text for token in company_tokens):
-                log(f"   -> [METHOD: TITLE MATCH] Found link: {href}")
+                print(f"   -> [METHOD: TITLE MATCH] Found link: {href}")
                 return href
 
-        # Fallback
         if valid_links:
-            log(f"   -> [METHOD: FALLBACK] Picking first valid result: {valid_links[0][0]}")
+            print(f"   -> [METHOD: FALLBACK] Picking first valid result: {valid_links[0][0]}")
             return valid_links[0][0]
 
-        log(f"   -> No valid website found for {company_name}")
+        print(f"   -> No valid website found for {company_name}")
         return None
     except Exception as e:
-        log(f"   -> Error searching for {company_name}: {e}")
+        print(f"   -> Error searching for {company_name}: {e}")
         return None
 
 def find_contact_page(driver, base_url):
@@ -197,7 +188,6 @@ def find_contact_page(driver, base_url):
     except: return None
 
 def process_workflow(input_file=None, city=None, country=None, log_callback=None):
-    # Validate city and country are provided
     if not city or not country:
         raise ValueError("City and Country are required parameters")
 
@@ -214,18 +204,13 @@ def process_workflow(input_file=None, city=None, country=None, log_callback=None
 
     try:
         file_to_process = input_file or INPUT_FILE
-        msg = f"Reading file: {file_to_process}"
-        print(msg)
-        if log_callback:
-            log_callback(msg)
+        print(f"Reading file: {file_to_process}")
 
         if file_to_process.endswith('.csv'): df = pd.read_csv(file_to_process)
         else: df = pd.read_excel(file_to_process)
 
-        msg = f"Loaded {len(df)} companies."
-        print(msg)
-        if log_callback:
-            log_callback(msg)
+        print(f"Loaded {len(df)} companies.")
+
         if 'Website' not in df.columns: df['Website'] = ""
         if 'Email' not in df.columns: df['Email'] = ""
 
@@ -233,15 +218,11 @@ def process_workflow(input_file=None, city=None, country=None, log_callback=None
             company = row['Name']
             if pd.isna(company) or str(company).strip() == "": continue
 
-            # Skip if BOTH email and website exist and are valid
             has_website = pd.notna(row['Website']) and str(row['Website']) not in ["", "nan", "Not Found", "Error"]
             has_email = pd.notna(row['Email']) and str(row['Email']) not in ["", "nan", "Not Found", "Error"]
 
             if has_website and has_email:
-                msg = f"Skipping {company}, already has email and website."
-                print(msg)
-                if log_callback:
-                    log_callback(msg)
+                print(f"Skipping {company}, already has email and website.")
                 continue
 
             msg = f"[{index+1}/{len(df)}] Searching for company: {company}"
@@ -250,36 +231,27 @@ def process_workflow(input_file=None, city=None, country=None, log_callback=None
                 log_callback(msg)
 
             website_url = search_company_url(driver, company, location, log_callback)
-            
+
             if not website_url:
-                msg = "   -> Could not find website."
-                print(msg)
-                if log_callback:
-                    log_callback(msg)
+                print("   -> Could not find website.")
                 df.at[index, 'Website'] = "Not Found"
                 df.at[index, 'Email'] = "Not Found"
             else:
-                msg = f"   -> Found Website: {website_url}"
-                print(msg)
-                if log_callback:
-                    log_callback(msg)
+                print(f"   -> Found Website: {website_url}")
                 df.at[index, 'Website'] = website_url
-                
+
                 try:
                     try: driver.get(website_url)
                     except TimeoutException: driver.execute_script("window.stop();")
-                    except: 
+                    except:
                         time.sleep(2)
                         driver.refresh()
-                    
+
                     random_sleep(3, 5)
                     emails = extract_emails_from_html(driver.page_source)
-                    
+
                     if not emails:
-                        msg = "   -> No emails on home, checking Contact page..."
-                        print(msg)
-                        if log_callback:
-                            log_callback(msg)
+                        print("   -> No emails on home, checking Contact page...")
                         contact_url = find_contact_page(driver, website_url)
                         if contact_url:
                             try:
@@ -289,17 +261,14 @@ def process_workflow(input_file=None, city=None, country=None, log_callback=None
                             except: pass
 
                     email_string = ", ".join(emails) if emails else "Not Found"
-                    msg = f"   -> Emails: {email_string}"
-                    print(msg)
-                    if log_callback:
-                        log_callback(msg)
+                    print(f"   -> Emails: {email_string}")
                     df.at[index, 'Email'] = email_string
                 except Exception as e:
-                    msg = f"   -> Error visiting website: {e}"
-                    print(msg)
-                    if log_callback:
-                        log_callback(msg)
+                    print(f"   -> Error visiting website: {e}")
                     df.at[index, 'Email'] = "Error"
+
+            if log_callback:
+                log_callback("Search done")
 
             df.to_csv(OUTPUT_FILE, index=False)
     except Exception as e:
