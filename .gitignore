@@ -30,6 +30,7 @@ ENV/
 companies_updated.csv
 *.log
 chromedriver*
+*.xlsx
 
 # OS
 .DS_Store
