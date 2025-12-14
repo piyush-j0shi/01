@@ -113,24 +113,29 @@ def normalize_name(name):
     tokens = clean.split()
     return [t for t in tokens if t not in remove_words and len(t) > 2]
 
-def search_company_url(driver, company_name):
+def search_company_url(driver, company_name, location="London UK", log_callback=None):
+    def log(msg):
+        print(msg)
+        if log_callback:
+            log_callback(msg)
+
     try:
         driver.get(SEARCH_ENGINE)
         handle_google_consent(driver)
-        
+
         if "unusual traffic" in driver.page_source.lower():
             input("   -> [ALERT] CAPTCHA detected! Solve it then press ENTER...")
 
         try:
             search_box = driver.find_element(By.NAME, "q")
             search_box.clear()
-            search_box.send_keys(f"{company_name} London UK")
+            search_box.send_keys(f"{company_name} {location}")
             search_box.send_keys(Keys.RETURN)
         except:
             driver.refresh()
             time.sleep(3)
             search_box = driver.find_element(By.NAME, "q")
-            search_box.send_keys(f"{company_name} London UK")
+            search_box.send_keys(f"{company_name} {location}")
             search_box.send_keys(Keys.RETURN)
         
         random_sleep(4, 6) 
@@ -139,7 +144,7 @@ def search_company_url(driver, company_name):
         # Official Button
         official_site = get_google_website_button(driver)
         if official_site:
-            print(f"   -> [METHOD: BUTTON] Found official link.")
+            log(f"   -> [METHOD: BUTTON] Found official link: {official_site}")
             return official_site
 
         # Organic Search
@@ -167,17 +172,18 @@ def search_company_url(driver, company_name):
         company_tokens = normalize_name(company_name)
         for href, text in valid_links:
             if any(token in text for token in company_tokens):
-                print(f"   -> [METHOD: TITLE MATCH] Found link: {href}")
+                log(f"   -> [METHOD: TITLE MATCH] Found link: {href}")
                 return href
 
         # Fallback
         if valid_links:
-            print(f"   -> [METHOD: FALLBACK] Picking first valid result: {valid_links[0][0]}")
+            log(f"   -> [METHOD: FALLBACK] Picking first valid result: {valid_links[0][0]}")
             return valid_links[0][0]
 
+        log(f"   -> No valid website found for {company_name}")
         return None
     except Exception as e:
-        print(f"Error searching for {company_name}: {e}")
+        log(f"   -> Error searching for {company_name}: {e}")
         return None
 
 def find_contact_page(driver, base_url):
@@ -190,35 +196,73 @@ def find_contact_page(driver, base_url):
         return None
     except: return None
 
-def process_workflow():
-    print("Starting Browser...")
+def process_workflow(input_file=None, city=None, country=None, log_callback=None):
+    # Validate city and country are provided
+    if not city or not country:
+        raise ValueError("City and Country are required parameters")
+
+    city = city.strip()
+    country = country.strip()
+    location = f"{city} {country}"
+
+    msg = f"Starting Browser for location: {location}..."
+    print(msg)
+    if log_callback:
+        log_callback(msg)
+
     driver = init_driver()
-    
+
     try:
-        print(f"Reading file: {INPUT_FILE}")
-        if INPUT_FILE.endswith('.csv'): df = pd.read_csv(INPUT_FILE)
-        else: df = pd.read_excel(INPUT_FILE)
-            
-        print(f"Loaded {len(df)} companies.")
+        file_to_process = input_file or INPUT_FILE
+        msg = f"Reading file: {file_to_process}"
+        print(msg)
+        if log_callback:
+            log_callback(msg)
+
+        if file_to_process.endswith('.csv'): df = pd.read_csv(file_to_process)
+        else: df = pd.read_excel(file_to_process)
+
+        msg = f"Loaded {len(df)} companies."
+        print(msg)
+        if log_callback:
+            log_callback(msg)
         if 'Website' not in df.columns: df['Website'] = ""
         if 'Email' not in df.columns: df['Email'] = ""
 
         for index, row in df.iterrows():
             company = row['Name']
             if pd.isna(company) or str(company).strip() == "": continue
-            if pd.notna(row['Website']) and str(row['Website']) not in ["", "nan", "Not Found"]:
-                print(f"Skipping {company}, already has data.")
+
+            # Skip if BOTH email and website exist and are valid
+            has_website = pd.notna(row['Website']) and str(row['Website']) not in ["", "nan", "Not Found", "Error"]
+            has_email = pd.notna(row['Email']) and str(row['Email']) not in ["", "nan", "Not Found", "Error"]
+
+            if has_website and has_email:
+                msg = f"Skipping {company}, already has email and website."
+                print(msg)
+                if log_callback:
+                    log_callback(msg)
                 continue
 
-            print(f"[{index+1}/{len(df)}] Searching: {company}")
-            website_url = search_company_url(driver, company)
+            msg = f"[{index+1}/{len(df)}] Searching for company: {company}"
+            print(msg)
+            if log_callback:
+                log_callback(msg)
+
+            website_url = search_company_url(driver, company, location, log_callback)
             
             if not website_url:
-                print(f"   -> Could not find website.")
+                msg = "   -> Could not find website."
+                print(msg)
+                if log_callback:
+                    log_callback(msg)
                 df.at[index, 'Website'] = "Not Found"
                 df.at[index, 'Email'] = "Not Found"
             else:
-                print(f"   -> Found Website: {website_url}")
+                msg = f"   -> Found Website: {website_url}"
+                print(msg)
+                if log_callback:
+                    log_callback(msg)
                 df.at[index, 'Website'] = website_url
                 
                 try:
@@ -232,7 +276,10 @@ def process_workflow():
                     emails = extract_emails_from_html(driver.page_source)
                     
                     if not emails:
-                        print("   -> No emails on home, checking Contact page...")
+                        msg = "   -> No emails on home, checking Contact page..."
+                        print(msg)
+                        if log_callback:
+                            log_callback(msg)
                         contact_url = find_contact_page(driver, website_url)
                         if contact_url:
                             try:
@@ -240,20 +287,38 @@ def process_workflow():
                                 random_sleep(3, 5)
                                 emails = extract_emails_from_html(driver.page_source)
                             except: pass
-                    
+
                     email_string = ", ".join(emails) if emails else "Not Found"
-                    print(f"   -> Emails: {email_string}")
+                    msg = f"   -> Emails: {email_string}"
+                    print(msg)
+                    if log_callback:
+                        log_callback(msg)
                     df.at[index, 'Email'] = email_string
                 except Exception as e:
-                    print(f"   -> Error visiting website: {e}")
+                    msg = f"   -> Error visiting website: {e}"
+                    print(msg)
+                    if log_callback:
+                        log_callback(msg)
                     df.at[index, 'Email'] = "Error"
 
             df.to_csv(OUTPUT_FILE, index=False)
-    except Exception as e: print(f"Critical Error: {e}")
+    except Exception as e:
+        msg = f"Critical Error: {e}"
+        print(msg)
+        if log_callback:
+            log_callback(msg)
     finally:
-        try: driver.quit()
-        except: pass
-        print(f"Done. Saved to {OUTPUT_FILE}")
+        try:
+            driver.quit()
+        except:
+            pass
+        msg = f"Done. Saved to {OUTPUT_FILE}"
+        print(msg)
+        if log_callback:
+            log_callback(msg)
+
+    return OUTPUT_FILE
 
 if __name__ == "__main__":
-    process_workflow()
+    # When running standalone, use default London UK
+    process_workflow(city="London", country="UK")

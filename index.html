@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Company Web Scraper</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+        }
+
+        .header {
+            text-align: center;
+            color: white;
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            font-size: 1.1rem;
+            opacity: 0.9;
+        }
+
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+            margin-bottom: 20px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 8px;
+            color: #333;
+        }
+
+        input[type="text"],
+        input[type="file"] {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 1rem;
+            transition: border-color 0.3s;
+        }
+
+        input[type="text"]:focus,
+        input[type="file"]:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+
+        .btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 14px 30px;
+            font-size: 1rem;
+            font-weight: 600;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            width: 100%;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .btn-download {
+            background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+            margin-top: 10px;
+        }
+
+        .logs-container {
+            background: #1e1e1e;
+            border-radius: 8px;
+            padding: 20px;
+            max-height: 400px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9rem;
+            color: #00ff00;
+            margin-top: 20px;
+        }
+
+        .log-entry {
+            margin-bottom: 8px;
+            line-height: 1.5;
+        }
+
+        .log-entry.error {
+            color: #ff6b6b;
+        }
+
+        .log-entry.success {
+            color: #51cf66;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            margin-bottom: 15px;
+        }
+
+        .status-idle {
+            background: #e9ecef;
+            color: #495057;
+        }
+
+        .status-processing {
+            background: #fff3cd;
+            color: #856404;
+            animation: pulse 2s infinite;
+        }
+
+        .status-completed {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .status-error {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        @keyframes pulse {
+            0%, 100% {
+                opacity: 1;
+            }
+            50% {
+                opacity: 0.7;
+            }
+        }
+
+        .file-info {
+            background: #f8f9fa;
+            padding: 12px;
+            border-radius: 6px;
+            margin-top: 10px;
+            font-size: 0.9rem;
+            color: #495057;
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        @media (max-width: 768px) {
+            .form-row {
+                grid-template-columns: 1fr;
+            }
+
+            .header h1 {
+                font-size: 2rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Company Web Scraper</h1>
+            <p>Upload your company list and get emails & websites automatically</p>
+        </div>
+
+        <div class="card">
+            <div id="statusBadge" class="status-badge status-idle">Ready</div>
+
+            <form id="uploadForm">
+                <div class="form-group">
+                    <label for="file">Company List File (Excel or CSV) <span style="color: red;">*</span></label>
+                    <input type="file" id="file" name="file" accept=".xlsx,.csv" required>
+                    <div id="fileInfo" class="file-info hidden"></div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="city">City <span style="color: red;">*</span></label>
+                        <input type="text" id="city" name="city" placeholder="e.g., London" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="country">Country <span style="color: red;">*</span></label>
+                        <input type="text" id="country" name="country" placeholder="e.g., UK" required>
+                    </div>
+                </div>
+
+                <button type="submit" class="btn" id="submitBtn">Start Processing</button>
+            </form>
+
+            <button class="btn btn-download hidden" id="downloadBtn">Download Processed File</button>
+        </div>
+
+        <div class="card">
+            <h2 style="margin-bottom: 15px; color: #333;">Live Logs</h2>
+            <div class="logs-container" id="logsContainer">
+                <div class="log-entry">Waiting for file upload...</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_URL = 'http://localhost:8000';
+        let currentJobId = null;
+        let eventSource = null;
+        let outputFile = null;
+
+        const form = document.getElementById('uploadForm');
+        const fileInput = document.getElementById('file');
+        const fileInfo = document.getElementById('fileInfo');
+        const submitBtn = document.getElementById('submitBtn');
+        const downloadBtn = document.getElementById('downloadBtn');
+        const logsContainer = document.getElementById('logsContainer');
+        const statusBadge = document.getElementById('statusBadge');
+
+        // Show file info when selected
+        fileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                fileInfo.textContent = `Selected: ${file.name} (${(file.size / 1024).toFixed(2)} KB)`;
+                fileInfo.classList.remove('hidden');
+            } else {
+                fileInfo.classList.add('hidden');
+            }
+        });
+
+        // Handle form submission
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            // Validate city and country
+            const city = document.getElementById('city').value.trim();
+            const country = document.getElementById('country').value.trim();
+
+            if (!city || !country) {
+                logsContainer.innerHTML = '';
+                addLog('Error: City and Country are required fields!', 'error');
+                updateStatus('error', 'Validation Error');
+                return;
+            }
+
+            if (!fileInput.files[0]) {
+                logsContainer.innerHTML = '';
+                addLog('Error: Please select a file to upload!', 'error');
+                updateStatus('error', 'Validation Error');
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('file', fileInput.files[0]);
+            formData.append('city', city);
+            formData.append('country', country);
+
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Uploading...';
+            logsContainer.innerHTML = '';
+            downloadBtn.classList.add('hidden');
+            updateStatus('processing', 'Processing...');
+
+            try {
+                const response = await fetch(`${API_URL}/upload`, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const result = await response.json();
+
+                if (result.error) {
+                    addLog(result.error, 'error');
+                    updateStatus('error', 'Error');
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = 'Start Processing';
+                    return;
+                }
+
+                currentJobId = result.job_id;
+                addLog(`Job started: ${result.job_id}`);
+                addLog(`Searching in: ${result.city}, ${result.country}`);
+
+                // Start listening to logs
+                streamLogs(currentJobId);
+
+            } catch (error) {
+                addLog(`Error: ${error.message}`, 'error');
+                updateStatus('error', 'Error');
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Start Processing';
+            }
+        });
+
+        // Stream logs using Server-Sent Events
+        function streamLogs(jobId) {
+            if (eventSource) {
+                eventSource.close();
+            }
+
+            eventSource = new EventSource(`${API_URL}/logs/${jobId}`);
+
+            eventSource.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+
+                if (data.type === 'log') {
+                    addLog(data.message);
+                } else if (data.type === 'completed') {
+                    addLog('Processing completed successfully!', 'success');
+                    updateStatus('completed', 'Completed');
+                    outputFile = data.output_file;
+                    downloadBtn.classList.remove('hidden');
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = 'Start Processing';
+                    eventSource.close();
+                } else if (data.type === 'error') {
+                    addLog(`Error: ${data.message}`, 'error');
+                    updateStatus('error', 'Error');
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = 'Start Processing';
+                    eventSource.close();
+                }
+            };
+
+            eventSource.onerror = (error) => {
+                console.error('EventSource error:', error);
+                eventSource.close();
+            };
+        }
+
+        // Add log entry to the logs container
+        function addLog(message, type = 'info') {
+            const logEntry = document.createElement('div');
+            logEntry.className = `log-entry ${type}`;
+            logEntry.textContent = message;
+            logsContainer.appendChild(logEntry);
+            logsContainer.scrollTop = logsContainer.scrollHeight;
+        }
+
+        // Update status badge
+        function updateStatus(status, text) {
+            statusBadge.className = `status-badge status-${status}`;
+            statusBadge.textContent = text;
+        }
+
+        // Handle download
+        downloadBtn.addEventListener('click', () => {
+            if (outputFile) {
+                window.location.href = `${API_URL}/download/${outputFile}`;
+            }
+        });
+    </script>
+</body>
+</html>

@@ -5,6 +5,37 @@ build/
 dist/
 wheels/
 *.egg-info
+*.so
+.Python
+*.egg
+sdist/
+var/
+*.py[cod]
+*$py.class
 
 # Virtual environments
 .venv
+venv/
+env/
+ENV/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Project specific - output files
+companies_updated.csv
+*.log
+chromedriver*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary files
+tmp/
+temp/
+*.tmp
