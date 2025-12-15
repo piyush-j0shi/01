@@ -109,6 +109,15 @@
             margin-top: 10px;
         }
 
+        .btn-stop {
+            background: linear-gradient(135deg, #f12711 0%, #f5af19 100%);
+            margin-top: 10px;
+        }
+
+        .btn-stop:hover {
+            box-shadow: 0 5px 20px rgba(241, 39, 17, 0.4);
+        }
+
         .logs-container {
             background: #1e1e1e;
             border-radius: 8px;
@@ -229,6 +238,7 @@
                 <button type="submit" class="btn" id="submitBtn">Start Processing</button>
             </form>
 
+            <button class="btn btn-stop hidden" id="stopBtn">Stop Processing</button>
             <button class="btn btn-download hidden" id="downloadBtn">Download Processed File</button>
         </div>
 
@@ -250,6 +260,7 @@
         const fileInput = document.getElementById('file');
         const fileInfo = document.getElementById('fileInfo');
         const submitBtn = document.getElementById('submitBtn');
+        const stopBtn = document.getElementById('stopBtn');
         const downloadBtn = document.getElementById('downloadBtn');
         const logsContainer = document.getElementById('logsContainer');
         const statusBadge = document.getElementById('statusBadge');
@@ -296,6 +307,7 @@
             submitBtn.textContent = 'Uploading...';
             logsContainer.innerHTML = '';
             downloadBtn.classList.add('hidden');
+            stopBtn.classList.add('hidden');
             updateStatus('processing', 'Processing...');
 
             try {
@@ -317,6 +329,12 @@
                 currentJobId = result.job_id;
                 addLog(`Job started: ${result.job_id}`);
                 addLog(`Searching in: ${result.city}, ${result.country}`);
+
+                // Show stop button and update submit button
+                submitBtn.disabled = true;
+                submitBtn.textContent = 'Processing...';
+                stopBtn.classList.remove('hidden');
+                stopBtn.disabled = false;
 
                 // Start listening to logs
                 streamLogs(currentJobId);
@@ -347,12 +365,23 @@
                     updateStatus('completed', 'Completed');
                     outputFile = data.output_file;
                     downloadBtn.classList.remove('hidden');
+                    stopBtn.classList.add('hidden');
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = 'Start Processing';
+                    eventSource.close();
+                } else if (data.type === 'stopped') {
+                    addLog('Processing stopped by user. Partial results available.', 'success');
+                    updateStatus('completed', 'Stopped - Partial Results');
+                    outputFile = data.output_file;
+                    downloadBtn.classList.remove('hidden');
+                    stopBtn.classList.add('hidden');
                     submitBtn.disabled = false;
                     submitBtn.textContent = 'Start Processing';
                     eventSource.close();
                 } else if (data.type === 'error') {
                     addLog(`Error: ${data.message}`, 'error');
                     updateStatus('error', 'Error');
+                    stopBtn.classList.add('hidden');
                     submitBtn.disabled = false;
                     submitBtn.textContent = 'Start Processing';
                     eventSource.close();
@@ -379,6 +408,35 @@
             statusBadge.className = `status-badge status-${status}`;
             statusBadge.textContent = text;
         }
+
+        // Handle stop
+        stopBtn.addEventListener('click', async () => {
+            if (!currentJobId) return;
+
+            stopBtn.disabled = true;
+            stopBtn.textContent = 'Stopping...';
+            addLog('Sending stop signal...', 'info');
+
+            try {
+                const response = await fetch(`${API_URL}/stop/${currentJobId}`, {
+                    method: 'POST'
+                });
+
+                const result = await response.json();
+
+                if (result.error) {
+                    addLog(`Error stopping job: ${result.error}`, 'error');
+                    stopBtn.disabled = false;
+                    stopBtn.textContent = 'Stop Processing';
+                } else {
+                    addLog('Stop signal sent. Waiting for current operation to complete...', 'info');
+                }
+            } catch (error) {
+                addLog(`Error: ${error.message}`, 'error');
+                stopBtn.disabled = false;
+                stopBtn.textContent = 'Stop Processing';
+            }
+        });
 
         // Handle download
         downloadBtn.addEventListener('click', () => {

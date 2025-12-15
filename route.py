@@ -22,6 +22,7 @@ app.add_middleware(
 )
 
 log_streams = {}
+stop_flags = {}
 
 
 class LogCollector:
@@ -42,24 +43,35 @@ def process_file_task_sync(file_path: str, city: str, country: str, job_id: str)
     def log_callback(msg):
         log_collector.add_log(msg)
 
+    def stop_check():
+        return stop_flags.get(job_id, False)
+
     try:
         log_callback(f"Starting processing for location: {city} {country}")
         output_file = process_workflow(
             input_file=file_path,
             city=city,
             country=country,
-            log_callback=log_callback
+            log_callback=log_callback,
+            stop_check=stop_check
         )
-        log_callback(f"Processing completed! Output file: {output_file}")
 
-        if job_id in log_streams:
-            log_streams[job_id].append(f"__COMPLETED__{output_file}")
+        if stop_check():
+            log_callback(f"Processing stopped by user! Partial results saved to: {output_file}")
+            if job_id in log_streams:
+                log_streams[job_id].append(f"__STOPPED__{output_file}")
+        else:
+            log_callback(f"Processing completed! Output file: {output_file}")
+            if job_id in log_streams:
+                log_streams[job_id].append(f"__COMPLETED__{output_file}")
 
     except Exception as e:
         log_callback(f"Error during processing: {str(e)}")
         if job_id in log_streams:
             log_streams[job_id].append(f"__ERROR__{str(e)}")
     finally:
+        if job_id in stop_flags:
+            del stop_flags[job_id]
         try:
             os.remove(file_path)
         except:
@@ -92,6 +104,7 @@ async def upload_file(
     job_id = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{file.filename}"
 
     log_streams[job_id] = []
+    stop_flags[job_id] = False
 
     temp_file = tempfile.NamedTemporaryFile(
         delete=False,
@@ -140,6 +153,13 @@ async def stream_logs(job_id: str):
                     del log_streams[job_id]
                     return
 
+                elif log_entry.startswith("__STOPPED__"):
+                    output_file = log_entry.replace("__STOPPED__", "")
+                    yield f"data: {json.dumps({'type': 'stopped', 'output_file': output_file})}\n\n"
+                    await asyncio.sleep(2)
+                    del log_streams[job_id]
+                    return
+
                 elif log_entry.startswith("__ERROR__"):
                     error_msg = log_entry.replace("__ERROR__", "")
                     yield f"data: {json.dumps({'type': 'error', 'message': error_msg})}\n\n"
@@ -157,6 +177,15 @@ async def stream_logs(job_id: str):
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 
+@app.post("/stop/{job_id}")
+async def stop_job(job_id: str):
+    if job_id not in log_streams:
+        return {"error": "Job not found"}
+
+    stop_flags[job_id] = True
+    return {"message": "Stop signal sent", "job_id": job_id}
+
+
 @app.get("/download/{filename}")
 async def download_file(filename: str):
     file_path = filename
@@ -166,7 +195,7 @@ async def download_file(filename: str):
 
     return FileResponse(
         file_path,
-        media_type="text/csv",
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         filename=os.path.basename(file_path)
     )
 

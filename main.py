@@ -9,14 +9,13 @@ from selenium.common.exceptions import TimeoutException
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin, unquote
 
-INPUT_FILE = 'companies.xlsx' 
-OUTPUT_FILE = 'companies_updated.csv'
+INPUT_FILE = 'companies.xlsx'
+OUTPUT_FILE = 'companies_updated.xlsx'
 SEARCH_ENGINE = "https://www.google.com"
 
 def init_driver():
     options = uc.ChromeOptions()
 
-    # Headless mode for server environments
     options.add_argument("--headless=new")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
@@ -24,11 +23,9 @@ def init_driver():
     options.add_argument("--disable-software-rasterizer")
     options.add_argument("--disable-extensions")
 
-    # Window size (replaces --start-maximized for headless)
     options.add_argument("--window-size=1920,1080")
     options.add_argument("--lang=en-GB")
 
-    # Additional stability options
     options.add_argument("--disable-blink-features=AutomationControlled")
     options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
 
@@ -203,7 +200,7 @@ def find_contact_page(driver, base_url):
         return None
     except: return None
 
-def process_workflow(input_file=None, city=None, country=None, log_callback=None):
+def process_workflow(input_file=None, city=None, country=None, log_callback=None, stop_check=None):
     if not city or not country:
         raise ValueError("City and Country are required parameters")
 
@@ -230,18 +227,44 @@ def process_workflow(input_file=None, city=None, country=None, log_callback=None
         if 'Website' not in df.columns: df['Website'] = ""
         if 'Email' not in df.columns: df['Email'] = ""
 
+        companies_to_process = 0
+        for _, row in df.iterrows():
+            if pd.isna(row['Name']) or str(row['Name']).strip() == "":
+                continue
+            has_website = pd.notna(row['Website']) and str(row['Website']).strip() not in ["", "nan", "Not Found", "Error"]
+            has_email = pd.notna(row['Email']) and str(row['Email']).strip() not in ["", "nan", "Not Found", "Error"]
+            if not (has_website and has_email):
+                companies_to_process += 1
+
+        msg = f"Found {companies_to_process} companies that need processing (out of {len(df)} total)"
+        print(msg)
+        if log_callback:
+            log_callback(msg)
+
+        processed_count = 0
         for index, row in df.iterrows():
+            if stop_check and stop_check():
+                msg = "Stop signal received. Saving progress..."
+                print(msg)
+                if log_callback:
+                    log_callback(msg)
+                break
+
             company = row['Name']
             if pd.isna(company) or str(company).strip() == "": continue
 
-            has_website = pd.notna(row['Website']) and str(row['Website']) not in ["", "nan", "Not Found", "Error"]
-            has_email = pd.notna(row['Email']) and str(row['Email']) not in ["", "nan", "Not Found", "Error"]
+            has_website = pd.notna(row['Website']) and str(row['Website']).strip() not in ["", "nan", "Not Found", "Error"]
+            has_email = pd.notna(row['Email']) and str(row['Email']).strip() not in ["", "nan", "Not Found", "Error"]
 
             if has_website and has_email:
-                print(f"Skipping {company}, already has email and website.")
+                msg = f"[{index+1}/{len(df)}] Skipping {company} - already has email and website"
+                print(msg)
+                if log_callback:
+                    log_callback(msg)
                 continue
 
-            msg = f"[{index+1}/{len(df)}] Searching for company: {company}"
+            processed_count += 1
+            msg = f"[{processed_count}/{companies_to_process}] Processing company: {company}"
             print(msg)
             if log_callback:
                 log_callback(msg)
@@ -286,7 +309,13 @@ def process_workflow(input_file=None, city=None, country=None, log_callback=None
             if log_callback:
                 log_callback("Search done")
 
-            df.to_csv(OUTPUT_FILE, index=False)
+            df.to_excel(OUTPUT_FILE, index=False)
+
+        msg = f"Processing complete! Processed {processed_count} companies. Saved to {OUTPUT_FILE}"
+        print(msg)
+        if log_callback:
+            log_callback(msg)
+
     except Exception as e:
         msg = f"Critical Error: {e}"
         print(msg)
@@ -297,10 +326,6 @@ def process_workflow(input_file=None, city=None, country=None, log_callback=None
             driver.quit()
         except:
             pass
-        msg = f"Done. Saved to {OUTPUT_FILE}"
-        print(msg)
-        if log_callback:
-            log_callback(msg)
 
     return OUTPUT_FILE
 
