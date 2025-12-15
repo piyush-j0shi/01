@@ -200,6 +200,15 @@ def find_contact_page(driver, base_url):
         return None
     except: return None
 
+def has_valid_data(value):
+    """Check if a cell has valid data (not empty, not 'Not Found', not 'Error')"""
+    if pd.isna(value):
+        return False
+    value_str = str(value).strip().lower()
+    if value_str in ["", "nan", "not found", "error", "none"]:
+        return False
+    return True
+
 def process_workflow(input_file=None, city=None, country=None, log_callback=None, stop_check=None):
     if not city or not country:
         raise ValueError("City and Country are required parameters")
@@ -227,16 +236,33 @@ def process_workflow(input_file=None, city=None, country=None, log_callback=None
         if 'Website' not in df.columns: df['Website'] = ""
         if 'Email' not in df.columns: df['Email'] = ""
 
+        msg = "Checking for existing data in uploaded file..."
+        print(msg)
+        if log_callback:
+            log_callback(msg)
+
         companies_to_process = 0
-        for _, row in df.iterrows():
+        companies_with_data = 0
+        first_company_logged = False
+        for idx, row in df.iterrows():
             if pd.isna(row['Name']) or str(row['Name']).strip() == "":
                 continue
-            has_website = pd.notna(row['Website']) and str(row['Website']).strip() not in ["", "nan", "Not Found", "Error"]
-            has_email = pd.notna(row['Email']) and str(row['Email']).strip() not in ["", "nan", "Not Found", "Error"]
-            if not (has_website and has_email):
+
+            if not first_company_logged:
+                website_val = row.get('Website')
+                email_val = row.get('Email')
+                msg = f"Sample check - Company: {row['Name']}, Website: '{website_val}' (valid: {has_valid_data(website_val)}), Email: '{email_val}' (valid: {has_valid_data(email_val)})"
+                print(msg)
+                if log_callback:
+                    log_callback(msg)
+                first_company_logged = True
+
+            if has_valid_data(row.get('Website')) and has_valid_data(row.get('Email')):
+                companies_with_data += 1
+            else:
                 companies_to_process += 1
 
-        msg = f"Found {companies_to_process} companies that need processing (out of {len(df)} total)"
+        msg = f"Found {companies_with_data} companies with existing data, {companies_to_process} need processing (out of {len(df)} total)"
         print(msg)
         if log_callback:
             log_callback(msg)
@@ -253,32 +279,50 @@ def process_workflow(input_file=None, city=None, country=None, log_callback=None
             company = row['Name']
             if pd.isna(company) or str(company).strip() == "": continue
 
-            has_website = pd.notna(row['Website']) and str(row['Website']).strip() not in ["", "nan", "Not Found", "Error"]
-            has_email = pd.notna(row['Email']) and str(row['Email']).strip() not in ["", "nan", "Not Found", "Error"]
+            website_value = row.get('Website')
+            email_value = row.get('Email')
+            has_website = has_valid_data(website_value)
+            has_email = has_valid_data(email_value)
 
             if has_website and has_email:
-                msg = f"[{index+1}/{len(df)}] Skipping {company} - already has email and website"
+                msg = f"[{index+1}/{len(df)}] Skipping {company} - already has website and email"
                 print(msg)
                 if log_callback:
                     log_callback(msg)
                 continue
 
             processed_count += 1
-            msg = f"[{processed_count}/{companies_to_process}] Processing company: {company}"
+
+            needs_website = not has_website
+            needs_email = not has_email
+
+            if needs_website and needs_email:
+                msg = f"[{processed_count}/{companies_to_process}] Processing {company} - searching for website and email"
+            elif needs_website:
+                msg = f"[{processed_count}/{companies_to_process}] Processing {company} - searching for website (email exists)"
+            else:
+                msg = f"[{processed_count}/{companies_to_process}] Processing {company} - searching for email (website exists: {website_value})"
+
             print(msg)
             if log_callback:
                 log_callback(msg)
 
-            website_url = search_company_url(driver, company, location, log_callback)
-
-            if not website_url:
-                print("   -> Could not find website.")
-                df.at[index, 'Website'] = "Not Found"
-                df.at[index, 'Email'] = "Not Found"
+            if needs_website:
+                website_url = search_company_url(driver, company, location, log_callback)
+                if not website_url:
+                    print("   -> Could not find website.")
+                    df.at[index, 'Website'] = "Not Found"
+                    if needs_email:
+                        df.at[index, 'Email'] = "Not Found"
+                    website_url = None
+                else:
+                    print(f"   -> Found Website: {website_url}")
+                    df.at[index, 'Website'] = website_url
             else:
-                print(f"   -> Found Website: {website_url}")
-                df.at[index, 'Website'] = website_url
+                website_url = website_value
+                print(f"   -> Using existing website: {website_url}")
 
+            if needs_email and website_url:
                 try:
                     try: driver.get(website_url)
                     except TimeoutException: driver.execute_script("window.stop();")
@@ -305,9 +349,19 @@ def process_workflow(input_file=None, city=None, country=None, log_callback=None
                 except Exception as e:
                     print(f"   -> Error visiting website: {e}")
                     df.at[index, 'Email'] = "Error"
+            elif needs_email:
+                print("   -> Cannot search for email without a website")
+                df.at[index, 'Email'] = "Not Found"
+
+            updated_items = []
+            if needs_website:
+                updated_items.append("website")
+            if needs_email:
+                updated_items.append("email")
+            update_msg = f"Updated: {', '.join(updated_items)}"
 
             if log_callback:
-                log_callback("Search done")
+                log_callback(update_msg)
 
             df.to_excel(OUTPUT_FILE, index=False)
 
@@ -330,5 +384,4 @@ def process_workflow(input_file=None, city=None, country=None, log_callback=None
     return OUTPUT_FILE
 
 if __name__ == "__main__":
-    # When running standalone, use default London UK
     process_workflow(city="London", country="UK")
