@@ -15,11 +15,25 @@ SEARCH_ENGINE = "https://www.google.com"
 
 def init_driver():
     options = uc.ChromeOptions()
-    options.add_argument("--start-maximized")
+
+    # Headless mode for server environments
+    options.add_argument("--headless=new")
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--disable-gpu")
+    options.add_argument("--disable-software-rasterizer")
+    options.add_argument("--disable-extensions")
+
+    # Window size (replaces --start-maximized for headless)
+    options.add_argument("--window-size=1920,1080")
     options.add_argument("--lang=en-GB")
-    
+
+    # Additional stability options
+    options.add_argument("--disable-blink-features=AutomationControlled")
+    options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+
     driver = uc.Chrome(options=options, version_main=142)
-    driver.set_page_load_timeout(30) 
+    driver.set_page_load_timeout(30)
     return driver
 
 def random_sleep(min_seconds=3, max_seconds=6):
@@ -119,7 +133,9 @@ def search_company_url(driver, company_name, location="London UK", log_callback=
         handle_google_consent(driver)
 
         if "unusual traffic" in driver.page_source.lower():
-            input("   -> [ALERT] CAPTCHA detected! Solve it then press ENTER...")
+            print("   -> [ALERT] CAPTCHA detected! This may cause failures in automated mode.")
+            if log_callback:
+                log_callback("CAPTCHA detected - request may fail")
 
         try:
             search_box = driver.find_element(By.NAME, "q")
