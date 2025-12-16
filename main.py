@@ -16,6 +16,7 @@ SEARCH_ENGINE = "https://www.google.com"
 def init_driver():
     options = uc.ChromeOptions()
 
+    # headless chrome
     options.add_argument("--headless=new")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
