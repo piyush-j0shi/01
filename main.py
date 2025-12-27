@@ -17,7 +17,7 @@ def init_driver():
     options = uc.ChromeOptions()
 
     # headless chrome
-    options.add_argument("--headless=new")
+    # options.add_argument("--headless=new")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-gpu")
@@ -59,44 +59,66 @@ def handle_google_consent(driver):
     except: pass
 
 def extract_emails_from_html(html_content):
-    """
-    Robust email extraction that handles:
-    1. mailto: links
-    2. Standard emails
-    3. Obfuscated emails with spaces/newlines (e.g. "name @ gmail . com")
-    """
     soup = BeautifulSoup(html_content, 'html.parser')
     found_emails = set()
+
+    for script in soup(['script', 'style', 'noscript']):
+        script.decompose()
 
     for a in soup.find_all('a', href=True):
         href = a['href']
         if href.lower().startswith('mailto:'):
             email = unquote(href.split(':')[1].split('?')[0]).strip()
-            if email:
+            if email and '@' in email:
                 found_emails.add(email)
 
     text_content = soup.get_text(separator=' ')
-    standard_pattern = r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}'
-    found_emails.update(re.findall(standard_pattern, text_content))
 
-    broken_pattern = r'([a-zA-Z0-9._%+-]+)\s*@\s*([a-zA-Z0-9.-]+)\s*\.\s*([a-zA-Z]{2,})'
-    broken_matches = re.findall(broken_pattern, html_content)
-    
-    for match in broken_matches:
+    standard_pattern = r'\b[a-zA-Z0-9][a-zA-Z0-9._%+-]*@[a-zA-Z0-9][a-zA-Z0-9.-]*\.[a-zA-Z]{2,}\b'
+    found_emails.update(re.findall(standard_pattern, text_content, re.IGNORECASE))
+
+    dot_pattern = r'\b([a-zA-Z0-9][a-zA-Z0-9._%+-]*)\s*@\s*([a-zA-Z0-9][a-zA-Z0-9.-]*)\s*\.\s*([a-zA-Z]{2,})\b'
+    dot_matches = re.findall(dot_pattern, html_content, re.IGNORECASE)
+    for match in dot_matches:
+        full_email = f"{match[0]}@{match[1]}.{match[2]}"
+        found_emails.add(full_email)
+
+    at_pattern = r'\b([a-zA-Z0-9][a-zA-Z0-9._%+-]*)\s*\[\s*at\s*\]\s*([a-zA-Z0-9][a-zA-Z0-9.-]*)\s*\.\s*([a-zA-Z]{2,})\b'
+    at_matches = re.findall(at_pattern, html_content, re.IGNORECASE)
+    for match in at_matches:
         full_email = f"{match[0]}@{match[1]}.{match[2]}"
         found_emails.add(full_email)
 
     clean_emails = []
-    junk_extensions = ['.png', '.jpg', '.jpeg', '.gif', '.css', '.js', '.svg', '.webp', '.mp4', '.woff']
-    
+    junk_extensions = ['.png', '.jpg', '.jpeg', '.gif', '.css', '.js', '.svg', '.webp', '.mp4', '.woff', '.woff2', '.ttf', '.eot', '.ico']
+    junk_patterns = ['sentry', 'example.com', 'domain.com', 'email.com', 'your-email', 'youremail', 'test@', '@test', 'noreply@example']
+
     for email in found_emails:
         email = email.lower().strip()
-        email = email.rstrip('.')
-        
-        if not any(email.endswith(ext) for ext in junk_extensions):
-            if "sentry" not in email and "example.com" not in email:
-                clean_emails.append(email)
-                
+        email = re.sub(r'^[.\-_]+|[.\-_]+$', '', email)
+        email = email.rstrip('.,;:')
+
+        if '@' not in email or email.count('@') > 1:
+            continue
+
+        if any(email.endswith(ext) for ext in junk_extensions):
+            continue
+
+        if any(junk in email for junk in junk_patterns):
+            continue
+
+        if len(email) < 6 or len(email) > 254:
+            continue
+
+        parts = email.split('@')
+        if len(parts) != 2 or not parts[0] or not parts[1]:
+            continue
+
+        if '.' not in parts[1]:
+            continue
+
+        clean_emails.append(email)
+
     return list(set(clean_emails))
 
 def get_google_website_button(driver):
@@ -165,7 +187,14 @@ def search_company_url(driver, company_name, location="London UK", log_callback=
             'google.', 'microsoft.', 'yahoo.', 'bing.', 'facebook.', 'linkedin.', 'instagram.', 'twitter.',
             'youtube.', 'pinterest.', 'yell.com', 'checkatrade.com', 'trustpilot.com', 'thomsonlocal',
             'company-information.service.gov.uk', 'companieshouse.gov.uk',
-            'thegazette.co.uk', 'endole.co.uk', 'pomanda.com', 'bizify.co.uk', '192.com'
+            'thegazette.co.uk', 'endole.co.uk', 'pomanda.com', 'bizify.co.uk', '192.com',
+            'wikipedia.org', 'wiki', '.gov.qa', 'gov.qa', 'moci.gov.qa', 'portal.www.gov.qa',
+            'hukoomi.gov.qa', 'gsdp.gov.qa', 'yellowpages', 'whitepages', 'yelp.com',
+            'bbb.org', 'dnb.com', 'bloomberg.com', 'reuters.com', 'crunchbase.com',
+            'zoominfo.com', 'kompass.com', 'europages.', 'alibaba.com', 'indiamart.com',
+            'justdial.com', 'sulekha.com', 'foursquare.com', 'manta.com', 'bizapedia.com',
+            'corporationwiki.com', 'spoke.com', 'vault.com', 'glassdoor.com', 'indeed.com',
+            'naviqatar.com', 'waze.com', 'wanderlog.com'
         ]
 
         valid_links = []
@@ -191,15 +220,54 @@ def search_company_url(driver, company_name, location="London UK", log_callback=
         print(f"   -> Error searching for {company_name}: {e}")
         return None
 
-def find_contact_page(driver, base_url):
+def find_contact_and_about_pages(driver, base_url):
     try:
         soup = BeautifulSoup(driver.page_source, 'html.parser')
-        keywords = ['contact', 'about', 'get in touch', 'support']
+        pages = {
+            'contact-us': None,
+            'contact': None,
+            'about-us': None,
+            'about': None,
+            'reach-us': None,
+            'get-in-touch': None
+        }
+
         for link in soup.find_all('a', href=True):
-            if any(w in link.get_text().lower() for w in keywords):
-                return urljoin(base_url, link['href'])
-        return None
-    except: return None
+            href = link.get('href', '')
+            text = link.get_text().lower().strip()
+            full_url = urljoin(base_url, href)
+
+            if full_url.startswith(base_url) or href.startswith('/'):
+                href_lower = href.lower()
+
+                if ('contact-us' in href_lower or 'contactus' in href_lower or
+                    'contact_us' in href_lower or text == 'contact us'):
+                    if not pages['contact-us']:
+                        pages['contact-us'] = full_url
+
+                elif ('contact' in href_lower or text == 'contact' or
+                      'get-in-touch' in href_lower or 'reach-us' in href_lower):
+                    if not pages['contact'] and not pages['contact-us']:
+                        pages['contact'] = full_url
+
+                elif ('about-us' in href_lower or 'aboutus' in href_lower or
+                      'about_us' in href_lower or text == 'about us'):
+                    if not pages['about-us']:
+                        pages['about-us'] = full_url
+
+                elif 'about' in href_lower or text == 'about':
+                    if not pages['about'] and not pages['about-us']:
+                        pages['about'] = full_url
+
+        result = []
+        priority_order = ['contact-us', 'contact', 'about-us', 'about']
+        for key in priority_order:
+            if pages[key]:
+                result.append(pages[key])
+
+        return result if result else []
+    except:
+        return []
 
 def has_valid_data(value):
     """Check if a cell has valid data (not empty, not 'Not Found', not 'Error')"""
@@ -237,33 +305,18 @@ def process_workflow(input_file=None, city=None, country=None, log_callback=None
         if 'Website' not in df.columns: df['Website'] = ""
         if 'Email' not in df.columns: df['Email'] = ""
 
-        msg = "Checking for existing data in uploaded file..."
+        msg = "Processing all companies with fresh search..."
         print(msg)
         if log_callback:
             log_callback(msg)
 
         companies_to_process = 0
-        companies_with_data = 0
-        first_company_logged = False
         for idx, row in df.iterrows():
             if pd.isna(row['Name']) or str(row['Name']).strip() == "":
                 continue
+            companies_to_process += 1
 
-            if not first_company_logged:
-                website_val = row.get('Website')
-                email_val = row.get('Email')
-                msg = f"Sample check - Company: {row['Name']}, Website: '{website_val}' (valid: {has_valid_data(website_val)}), Email: '{email_val}' (valid: {has_valid_data(email_val)})"
-                print(msg)
-                if log_callback:
-                    log_callback(msg)
-                first_company_logged = True
-
-            if has_valid_data(row.get('Website')) and has_valid_data(row.get('Email')):
-                companies_with_data += 1
-            else:
-                companies_to_process += 1
-
-        msg = f"Found {companies_with_data} companies with existing data, {companies_to_process} need processing (out of {len(df)} total)"
+        msg = f"Total companies to process: {companies_to_process}"
         print(msg)
         if log_callback:
             log_callback(msg)
@@ -280,50 +333,24 @@ def process_workflow(input_file=None, city=None, country=None, log_callback=None
             company = row['Name']
             if pd.isna(company) or str(company).strip() == "": continue
 
-            website_value = row.get('Website')
-            email_value = row.get('Email')
-            has_website = has_valid_data(website_value)
-            has_email = has_valid_data(email_value)
-
-            if has_website and has_email:
-                msg = f"[{index+1}/{len(df)}] Skipping {company} - already has website and email"
-                print(msg)
-                if log_callback:
-                    log_callback(msg)
-                continue
-
             processed_count += 1
 
-            needs_website = not has_website
-            needs_email = not has_email
-
-            if needs_website and needs_email:
-                msg = f"[{processed_count}/{companies_to_process}] Processing {company} - searching for website and email"
-            elif needs_website:
-                msg = f"[{processed_count}/{companies_to_process}] Processing {company} - searching for website (email exists)"
-            else:
-                msg = f"[{processed_count}/{companies_to_process}] Processing {company} - searching for email (website exists: {website_value})"
-
+            msg = f"[{processed_count}/{companies_to_process}] Processing {company} - searching for website and email"
             print(msg)
             if log_callback:
                 log_callback(msg)
 
-            if needs_website:
-                website_url = search_company_url(driver, company, location, log_callback)
-                if not website_url:
-                    print("   -> Could not find website.")
-                    df.at[index, 'Website'] = "Not Found"
-                    if needs_email:
-                        df.at[index, 'Email'] = "Not Found"
-                    website_url = None
-                else:
-                    print(f"   -> Found Website: {website_url}")
-                    df.at[index, 'Website'] = website_url
+            website_url = search_company_url(driver, company, location, log_callback)
+            if not website_url:
+                print("   -> Could not find website.")
+                df.at[index, 'Website'] = "Not Found"
+                df.at[index, 'Email'] = "Not Found"
+                website_url = None
             else:
-                website_url = website_value
-                print(f"   -> Using existing website: {website_url}")
+                print(f"   -> Found Website: {website_url}")
+                df.at[index, 'Website'] = website_url
 
-            if needs_email and website_url:
+            if website_url:
                 try:
                     try: driver.get(website_url)
                     except TimeoutException: driver.execute_script("window.stop();")
@@ -331,36 +358,89 @@ def process_workflow(input_file=None, city=None, country=None, log_callback=None
                         time.sleep(2)
                         driver.refresh()
 
-                    random_sleep(3, 5)
+                    random_sleep(2, 4)
+                    print("   -> Searching for emails on homepage...")
                     emails = extract_emails_from_html(driver.page_source)
 
-                    if not emails:
-                        print("   -> No emails on home, checking Contact page...")
-                        contact_url = find_contact_page(driver, website_url)
-                        if contact_url:
-                            try:
-                                driver.get(contact_url)
-                                random_sleep(3, 5)
-                                emails = extract_emails_from_html(driver.page_source)
-                            except: pass
+                    if emails:
+                        print(f"   -> Found {len(emails)} email(s) on homepage")
+                    else:
+                        print("   -> No emails on homepage, checking contact/about pages...")
+                        contact_pages = find_contact_and_about_pages(driver, website_url)
+
+                        if contact_pages:
+                            print(f"   -> Found {len(contact_pages)} potential page(s) to check")
+                            for page_url in contact_pages:
+                                if emails:
+                                    break
+                                try:
+                                    print(f"   -> Checking: {page_url}")
+                                    driver.get(page_url)
+                                    random_sleep(2, 3)
+                                    emails = extract_emails_from_html(driver.page_source)
+                                    if emails:
+                                        print(f"   -> Found {len(emails)} email(s) on this page")
+                                        break
+                                except Exception as e:
+                                    print(f"   -> Error loading page: {e}")
+                                    continue
+                        else:
+                            print("   -> No contact/about pages found")
+
+                        if not emails:
+                            print("   -> No emails found on existing website, searching Google for alternative website...")
+                            new_website_url = search_company_url(driver, company, location, log_callback)
+
+                            if new_website_url and new_website_url != website_url:
+                                print(f"   -> Found alternative website: {new_website_url}")
+                                try:
+                                    driver.get(new_website_url)
+                                    random_sleep(2, 4)
+                                    print("   -> Searching for emails on alternative homepage...")
+                                    emails = extract_emails_from_html(driver.page_source)
+
+                                    if emails:
+                                        print(f"   -> Found {len(emails)} email(s) on alternative homepage")
+                                        df.at[index, 'Website'] = new_website_url
+                                        print(f"   -> Updated website to: {new_website_url}")
+                                    else:
+                                        print("   -> No emails on alternative homepage, checking its contact/about pages...")
+                                        contact_pages = find_contact_and_about_pages(driver, new_website_url)
+
+                                        if contact_pages:
+                                            print(f"   -> Found {len(contact_pages)} potential page(s) on alternative site")
+                                            for page_url in contact_pages:
+                                                if emails:
+                                                    break
+                                                try:
+                                                    print(f"   -> Checking: {page_url}")
+                                                    driver.get(page_url)
+                                                    random_sleep(2, 3)
+                                                    emails = extract_emails_from_html(driver.page_source)
+                                                    if emails:
+                                                        print(f"   -> Found {len(emails)} email(s) on this page")
+                                                        df.at[index, 'Website'] = new_website_url
+                                                        print(f"   -> Updated website to: {new_website_url}")
+                                                        break
+                                                except Exception as e:
+                                                    print(f"   -> Error loading page: {e}")
+                                                    continue
+                                except Exception as e:
+                                    print(f"   -> Error visiting alternative website: {e}")
+                            else:
+                                print("   -> No alternative website found or same as existing")
 
                     email_string = ", ".join(emails) if emails else "Not Found"
-                    print(f"   -> Emails: {email_string}")
+                    print(f"   -> Final result: {email_string}")
                     df.at[index, 'Email'] = email_string
                 except Exception as e:
                     print(f"   -> Error visiting website: {e}")
                     df.at[index, 'Email'] = "Error"
-            elif needs_email:
+            else:
                 print("   -> Cannot search for email without a website")
                 df.at[index, 'Email'] = "Not Found"
 
-            updated_items = []
-            if needs_website:
-                updated_items.append("website")
-            if needs_email:
-                updated_items.append("email")
-            update_msg = f"Updated: {', '.join(updated_items)}"
-
+            update_msg = "Updated: website and email"
             if log_callback:
                 log_callback(update_msg)
 
