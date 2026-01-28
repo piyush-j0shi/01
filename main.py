@@ -190,25 +190,6 @@ def search_company_url(driver, company_name, location="London UK", log_callback=
             'thegazette.co.uk', 'endole.co.uk', 'pomanda.com', 'bizify.co.uk', '192.com',
             'wikipedia.org', 'wiki', '.gov.qa', 'gov.qa', 'moci.gov.qa', 'portal.www.gov.qa',
             'hukoomi.gov.qa', 'gsdp.gov.qa', 'yellowpages', 'whitepages', 'yelp.com',
-            'bbb.org', 'dnb.com', 'bloomberg.com', 'reuters.com', 'crunchbase.com',
-            'zoominfo.com', 'kompass.com', 'europages.', 'alibaba.com', 'indiamart.com',
-            'justdial.com', 'sulekha.com', 'foursquare.com', 'manta.com', 'bizapedia.com',
-            'corporationwiki.com', 'spoke.com', 'vault.com', 'glassdoor.com', 'indeed.com',
-            'naviqatar.com', 'waze.com', 'wanderlog.com'
-        ]
-
-        valid_links = []
-        for link in links:
-            href = link.get_attribute('href')
-            if not href or 'http' not in href or "google.com" in href: continue
-            if any(ignored in href for ignored in ignored_domains): continue
-            valid_links.append((href, link.text.lower()))
-
-        company_tokens = normalize_name(company_name)
-        for href, text in valid_links:
-            if any(token in text for token in company_tokens):
-                print(f"   -> [METHOD: TITLE MATCH] Found link: {href}")
-                return href
 
         if valid_links:
             print(f"   -> [METHOD: FALLBACK] Picking first valid result: {valid_links[0][0]}")
